@@ -1,4 +1,5 @@
-local datatype, new = _G.run.getBuilder(script), _G.run.getOwnConstructor(script)
+local datatype	= _G.run.getBuilder(script)
+local new		= _G.run.getConstructor(script, 'new')
 --||=======================================================--=======================================================||--
 --||												DataType Template												[=[-
 --[[	Version Information:																						||--
@@ -27,32 +28,30 @@ local datatype, new = _G.run.getBuilder(script), _G.run.getOwnConstructor(script
 
 
 
-datatype 'DataTypeTemplate' {
+datatype 'DataTypeTemplate' (function(constructors, properties, functions, operators)
+	--------------------------------------------------------
+	-- Constructors
+	
+	function constructors.new(p)
+		return {Property = p}
+	end
+	
 	--------------------------------------------------------
 	-- Properties
 	
-	property = 0;
+	properties.Property = 0
 	
 	--------------------------------------------------------
 	-- Functions
 	
-	iterate = function(self)
+	function functions:iterator()
 		return new(self.property + 1)
-	end
-	
-	--------------------------------------------------------
-} (function(constructor, operator)	------------------------
-	--------------------------------------------------------
-	-- Constructors
-	
-	function constructor.new(p)
-		return {property = p}
 	end
 	
 	--------------------------------------------------------
 	-- Operators
 	
-	function operator:__tostring()
+	function operators:__tostring()
 		return ''..self.property
 	end
 	

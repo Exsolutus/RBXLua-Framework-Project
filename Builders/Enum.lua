@@ -7,10 +7,9 @@ local builder, register = _G.init.initBuilder(script)
 --||																												]]--
 --[[	Change Log:																									||--
 --||		Version	0.1.0																							||--
---||		  [ 07/09/2019 ]																						||--
---||			change note header																					||--
---||			  - change note																						||--
---||				 ^  change note details																			]]--
+--||		  [ 07/10/2019 ]																						||--
+--||			Implementation																						||--
+--||			  - Supplies builder function for Enum modules														]]--
 --||																												]=]-
 --||=======================================================--=======================================================||--
 

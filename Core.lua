@@ -7,11 +7,20 @@
 --||																												]]--
 --[[	Change Log:																									||--
 --||		Version	0.4.0																							||--
+--||		  [ 07/28/2019 ]																						||--
+--||			Changes																								||--
+--||			  -	Added builder load priority in init()															||--
+--||				 ^	builders can require modules belonging to earlier-priority builders	(See Service builder)	||--
+--||			Implementation																						||--
+--||			  - getCallback(module, name)																		||--
+--||				 ^	returns Service callback by name, used for Service self-access								||--
+--||																												||--
 --||		  [ 07/15/2019 ]																						||--
 --||			Implementation																						||--
 --||			  -	wrapGlobals()																					||--
 --||				 ^	returns wrapped globals for use in module environments										||--
---||																												||--
+--||			  - getConstructor(module, name)																	||--
+--||				 ^	returns DataType constructor by name, used for DataType self-construction					||--
 --||																												||--
 --||		  [ 07/09/2019 ]																						||--
 --||			Implementation																						||--
@@ -31,7 +40,8 @@
 registry	= {												-- Framework module registry
 	['builder'] = {};
 }
-local require = require
+
+local CollectionService	= game:GetService('CollectionService')
 
 	-------------------------------------------------------  -------------------------------------------------------
 
@@ -43,19 +53,20 @@ function init()
 	print('. . . INITIALIZING')
 	phase	= 'init'
 	
-	CollectionService = game:GetService('CollectionService')
-															-- Load builders
-	local builders = CollectionService:GetTagged('builder')
-	for i, builder in pairs(builders) do
-		if 'Builder' ~= builder.Name then
-			_G.init				= _G.init or {}
-			_G.init.initBuilder	= initBuilder
-			require(builder)
+	
+	local builders = CollectionService:GetTagged('builder')	-- Load builders
+	for i = 0, 9 do
+		for j, builder in pairs(builders) do
+			if CollectionService:HasTag(builder, 'priority '..i) then
+				_G.init				= _G.init or {}
+				_G.init.initBuilder	= initBuilder
+				_G.init.wrapGlobals	= wrapGlobals
+				require(builder)
+				builders[j] = nil
+			end
 		end
 	end
 	_G.init = nil
-	
-	require = wrappedRequire
 end
 
 --[[	Runtime Phase
@@ -65,9 +76,13 @@ function run()
 	print('. . . RUNNING')
 	phase 	= 'run'
 	
-
-	require(game.ServerScriptService.DevelopmentSuite.Storage.LibraryTest)
-	registry['library']['LibraryTest'].test_funct()
+	local services = CollectionService:GetTagged('service')	-- Load services
+	for i, service in pairs(services) do
+		if not ('ServiceTemplate' == service.Name) then
+			wrappedRequire(service)
+			coroutine.wrap(registry['service'][service.Name][1].Run)(registry['service'][service.Name][1])
+		end
+	end
 end
 
 	-------------------------------------------------------  -------------------------------------------------------
@@ -78,12 +93,12 @@ end
 function initBuilder(module)
 	local tag
 	
-	if not 'ModuleScript' == module.ClassName then 			-- Validate
+	if not ('ModuleScript' == module.ClassName) then 			-- Validate
 		error('Calling module must provide object reference') 
 	end
 	tag = string.lower(module.Name)
 	
-	if 	'template' == tag or registry[tag] then 
+	if 'template' == tag or registry[tag] then 
 		warn('Duplicate builders with derived tag "'..tag..'"')
 		return function() end
 	end
@@ -104,12 +119,15 @@ end
 --[[	Wrapped Module Require
 	
 --]]
-local _require = require
 function wrappedRequire(reference)
-	_G.run 				= _G.run or {}
-	_G.run.getBuilder 	= getBuilder
-	_G.run.wrapGlobals	= wrapGlobals
-	_require(reference)
+	_G.run 					= _G.run or {}
+	_G.run.getBuilder 		= getBuilder
+	_G.run.wrapGlobals		= wrapGlobals
+	_G.run.getConstructor	= getConstructor
+	_G.run.getEvent			= getEvent
+	_G.run.getCallback		= getCallback
+	require(reference)
+	--_G.run = nil
 end
 
 
@@ -117,7 +135,7 @@ end
 	
 --]]
 function getBuilder(module)
-	if not 'ModuleScript' == module.ClassName then
+	if not ('ModuleScript' == module.ClassName) then
 		error('Calling module must provide self-reference') 
 	end
 	
@@ -131,6 +149,75 @@ function getBuilder(module)
 	end
 	
 	error('Calling module has no valid tag')
+end
+
+--[[	DataType Self-Constructor Accessor
+	Move into DataType builder later?
+--]]
+function getConstructor(module, name)
+	if 'ModuleScript' ~= module.ClassName then
+		error('Calling module must provide self-reference')
+	end
+	if not ('string' == type(name)) then
+		error('Calling module must provide name string')
+	end
+	if CollectionService:HasTag(module, 'datatype') then
+		return function(...)
+			if registry['datatype'][module.Name][name] then
+				return registry['datatype'][module.Name][name](...)
+			else
+				error('No constructor "'..name..'" found for '..module.Name)
+			end
+		end
+	else
+		error('Attempt to acquire datatype constructor on '..module.Name)
+	end
+end
+
+--[[	Service Event Accessor
+	Move into Service builder later?
+--]]
+function getEvent(module, name)
+	if 'ModuleScript' ~= module.ClassName then
+		error('Calling module must provide self-reference')
+	end
+	if not ('string' == type(name)) then
+		error('Calling module must provide name string')
+	end
+	if CollectionService:HasTag(module, 'service') then
+		return function(...)								-- event fire function
+			if registry['service'][module.Name] then
+				return registry['service'][module.Name][2](name, ...)
+			else
+				error('No callback "'..name..'" found for '..module.Name)
+			end
+		end
+	else
+		error('Attempt to acquire service callback on '..module.Name)
+	end
+end
+
+--[[	Service Callback Accessor
+	Move into Service builder later?
+--]]
+function getCallback(module, name)
+	if 'ModuleScript' ~= module.ClassName then
+		error('Calling module must provide self-reference')
+	end
+	if not ('string' == type(name)) then
+		error('Calling module must provide name string')
+	end
+	if CollectionService:HasTag(module, 'service') then
+		return function(...)								-- callback fire function
+			if registry['service'][module.Name] then
+				return registry['service'][module.Name][3](name, ...)
+			else
+				error('No callback "'..name..'" found for '..module.Name)
+			end
+		end
+	else
+		error('Attempt to acquire service callback on '..module.Name)
+	end
 end
 
 --[[	Global Variable Wrapper
@@ -160,8 +247,7 @@ function wrapGlobals()
 		end
 	end
 	
-	--	Wrap Enums object with custom enum support
-	local _enum
+	local _enum												-- Enum
 	local custom_enums = {}
 	do
 		local stock 	= Enum:GetEnums()
@@ -184,10 +270,34 @@ function wrapGlobals()
 		_enum = wrap(Enum, with)
 	end
 	
-	--[[	Registry Entry Accessor
-		
-	]]--
-	local _require
+	local _game												-- game
+	local custom_services = {}
+	do
+		local with = {}
+		function with:GetService(s)
+			local success, object	= pcall(game.GetService, game, s)
+			return 	(success and object) or 
+					(function()
+						if s ~= nil and string.match(object, '\''..s..'\' is not a valid Service name') ~= nil then
+							return custom_services[s] or error(object, 3)
+						end
+						error(object, 3)
+					end)()
+		end
+		function with:FindService(s)
+			local success, object	= pcall(game.FindService, game, s)
+			return 	(success and object) or 
+					(function()
+						if s ~= nil and string.match(object, '\''..s..'\' is not a valid Service name') ~= nil then
+							return custom_services[s] or error(object)
+						end
+						error(object)
+					end)()
+		end
+		_game = wrap(game, with)
+	end
+	
+	local _require											-- require
 	do
 		_require = function (reference)
 			if 'string' == type(reference) then
@@ -199,18 +309,24 @@ function wrapGlobals()
 							if 'enum' == prefix then
 								custom_enums[name] = registry[prefix][name]
 								_enum:refresh()
+							elseif 'service' == prefix then
+								custom_services[name] = registry[prefix][name][1]
+							else
+								return registry[prefix][name]
 							end
-							return registry[prefix][name]
 						else
 							local collection = CollectionService:GetTagged(prefix)
 							for k, v in pairs(collection) do
 								if 'ModuleScript' == v.ClassName and name == v.Name then
-									require(v)
+									wrappedRequire(v)
 									if 'enum' == prefix then
-										custom_enums[v.Name] = registry[prefix][name]
+										custom_enums[name] = registry[prefix][name]
 										_enum:refresh()
+									elseif 'service' == prefix then
+										custom_services[name] = registry[prefix][name][1]
+									else
+										return registry[prefix][name]
 									end
-									return registry[prefix][name]
 								end
 							end
 						end
@@ -218,7 +334,7 @@ function wrapGlobals()
 						error(prefix..' is not a supported module classification tag')
 					end
 			elseif 'userdata' == type(reference) then
-				if not 'ModuleScript' == reference.ClassName then
+				if not ('ModuleScript' == reference.ClassName) then
 					error('Invalide module reference')
 				end
 				local tags = CollectionService:GetTags(reference)
@@ -228,13 +344,16 @@ function wrapGlobals()
 					end
 					if registry[v] then
 						if not registry[v][reference.Name] then
-							require(reference)
+							wrappedRequire(reference)
 						end
 						if 'enum' == v then
 							custom_enums[reference.Name] = registry[v][reference.Name]
 							_enum:refresh()
+						elseif 'service' == v then
+							custom_services[reference.Name] = registry[v][reference.Name][1]
+						else
+							return registry[v][reference.Name]
 						end
-						return registry[v][reference.Name]
 					else
 						warn('No supported module classification tag found on '..reference.Name)
 						return require(reference)
@@ -246,10 +365,8 @@ function wrapGlobals()
 		end
 	end
 	
-	return _require, _enum
+	return _require, _enum, _game
 end
-
-
 
 	-------------------------------------------------------  -------------------------------------------------------
 	
